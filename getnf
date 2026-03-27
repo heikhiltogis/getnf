@@ -24,12 +24,6 @@ if [[ $(uname) == "Darwin" ]]; then
 fi
 readonly ON_MAC
 
-DOWN_DIR="$HOME/Downloads/getnf"
-if command -v xdg-user-dir > /dev/null; then
-    DOWN_DIR="$(xdg-user-dir DOWNLOAD)/getnf"
-fi
-readonly DOWN_DIR
-
 readonly GETNF_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/getnf"
 readonly FONT_RELEASES_DIR="$GETNF_DIR/releases"
 readonly RELEASE_FILE="$GETNF_DIR/release.txt"
@@ -130,14 +124,45 @@ get_font_dir() {
     readonly FONT_DIR
 }
 
+#######################################
+# Set the global DOWN_DIR and create that directory
+# Globals:
+#   KEEP_FONT_ARCHIVES
+# Arguments:
+#   None
+#######################################
+init_down_dir() {
+    if [[ "$KEEP_FONT_ARCHIVES" == "true" ]]; then
+        if command -v xdg-user-dir > /dev/null; then
+            DOWN_DIR="$(xdg-user-dir DOWNLOAD)/getnf"
+        else
+            DOWN_DIR="$HOME/Downloads/getnf"
+        fi
+        mkdir -p "$DOWN_DIR"
+    else
+        DOWN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/getnf.XXXXXX")
+        trap 'rm -rf -- "$DOWN_DIR"' EXIT HUP INT TERM
+    fi
+    readonly DOWN_DIR
+}
+
+#######################################
+# Create directories DOWN_DIR, FONT_DIR and FONT_RELEASES_DIR
+# Globals:
+#   OPERATE_GLOBALLY
+#   FONT_DIR
+#   FONT_RELEASES_DIR
+# Arguments:
+#   None
+#######################################
 create_dirs() {
+    init_down_dir
     get_font_dir
     if [[ "$OPERATE_GLOBALLY" == "true" ]]; then
         sudo mkdir -p "$FONT_DIR"
     else
         mkdir -p "$FONT_DIR"
     fi
-    mkdir -p "$DOWN_DIR"
     mkdir -p "$FONT_RELEASES_DIR"
 }
 
@@ -235,7 +260,7 @@ get_latest_release_version() {
     if [[ -f "$RELEASE_FILE" ]]; then
         local current_release=$(cat "$RELEASE_FILE")
         if [[ "$current_release" != "$RELEASE" ]]; then
-            NEW_RELEASE_AVAILABLE='true'
+            readonly NEW_RELEASE_AVAILABLE='true'
         fi
     fi
     echo "$RELEASE" > "$RELEASE_FILE"
@@ -423,22 +448,6 @@ save_font_release() {
 }
 
 #######################################
-# Remove the downloaded font archives
-# Globals:
-#   DOWN_DIR
-#   SELECTED_FONTS
-# Arguments:
-#   None
-#######################################
-remove_font_archives() {
-    echo -n "Removing downloaded font archives... "
-    for font in "${SELECTED_FONTS[@]}"; do
-        rm -f "$DOWN_DIR/$font.tar.xz"
-    done
-    confirm "Done"
-}
-
-#######################################
 # Install the selected font
 # Globals:
 #   DOWN_DIR
@@ -519,16 +528,14 @@ uninstall_fonts() {
 }
 
 #######################################
-# Remove font archives unless specified otherwise
+# Show archive location (if enabled) and confirm completion
 # Globals:
 #   KEEP_FONT_ARCHIVES
 # Arguments:
 #   None
 #######################################
 post_install() {
-    if [[ "$KEEP_FONT_ARCHIVES" == "false" ]]; then
-        remove_font_archives
-    else
+    if [[ "$KEEP_FONT_ARCHIVES" == "true" ]]; then
         info "The downloaded font archives can be found in $DOWN_DIR"
     fi
     confirm "Enjoy your new fonts!"
